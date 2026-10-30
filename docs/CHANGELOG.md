@@ -1,6 +1,19 @@
 Changelog
 =========
 
+2.5.0-beta.2 (October 30, 2026, Spotstone fork)
+--------------------------------------------
+- Restrict thread reorganization to system administrators and administrators of
+  the affected Space; moderator status alone no longer grants access.
+- Require a custom reason and display a cumulative move history with acting
+  admin, timestamp, original message author/date and accompanying reply count.
+- Show a small yellow warning triangle to all authorized readers; clicking it
+  opens the full history in a permission-checked modal instead of expanding it inline.
+- Keep history across repeated post/comment conversions without editing the
+  original message. Backfill current item pointers for existing move records.
+- Traverse all descendants when updating attachment context; verify the
+  post-to-reply-with-child case and role boundaries in integration tests.
+
 2.5.0-beta.1 (October 30, 2026, Spotstone fork)
 --------------------------------------------
 - Add moderator workflow to turn a post into a reply, promote a reply to a post,

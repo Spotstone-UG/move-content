@@ -1,27 +1,53 @@
 # Beiträge und Antworten umordnen
 
-Entwicklungsfassung `2.5.0-beta.1`, basierend auf CUZY.APP Move content 2.4.1.
+Entwicklungsfassung `2.5.0-beta.2`, basierend auf CUZY.APP Move content 2.4.1
+einschließlich der Übersetzungsaktualisierungen aus 2.4.2.
 Fork: https://github.com/Spotstone-UG/move-content
 Entwicklungszweig: `feature/rethread-posts-and-comments`.
 
 ## Bedienung
 
 Im Drei-Punkte-Menü eines normalen Beitrags oder einer Antwort erscheint für
-Space-Moderatorinnen und -Moderatoren **Beitrag / Antwort umordnen**.
+Systemadmins und Admins des jeweiligen Spaces **Beitrag / Antwort umordnen**.
+Normale Mitglieder und reine Space-Moderatoren dürfen die Funktion nicht nutzen.
 
 1. **Beitrag zur Antwort:** Im Menü von Beitrag A die Funktion öffnen, den
-   Permalink von Beitrag B einfügen, Vorschau anzeigen und bestätigen.
+   Permalink von Beitrag B und eine Begründung einfügen, Vorschau anzeigen und bestätigen.
    A erscheint anschließend als Antwort unter B.
 2. **Antwort herauslösen:** Im Menü der Antwort „als eigenen Beitrag
-   herauslösen“ auswählen, Vorschau anzeigen und bestätigen.
+   herauslösen“ auswählen, eine Begründung eingeben, Vorschau anzeigen und bestätigen.
 3. **Antwort umhängen:** Im Menü der Antwort den Permalink eines anderen
-   Beitrags einfügen, Vorschau anzeigen und bestätigen.
+   Beitrags und eine Begründung einfügen, Vorschau anzeigen und bestätigen.
 
 Text einschließlich Markdown, ursprüngliche Autorenschaft, Erstellungs- und
 Bearbeitungsdatum, Datei-GUIDs, native Likes und Emoji-Reaktionen bleiben
 erhalten. Direkte Antworten ziehen mit. Es werden keine neuen
 Veröffentlichungsaktivitäten oder Benachrichtigungen ausgelöst.
 Die zeitliche Sortierung richtet sich weiterhin nach dem ursprünglichen Datum.
+
+### Mitziehende Antworten und sichtbarer Verlauf
+
+Aus `Beitrag A → Antwort X` wird beim Verschieben von A unter Beitrag B:
+`Beitrag B → Antwort A → Antwort X`. Text, Autor, Zeitstempel, Anhänge und
+Reaktionen von X bleiben erhalten. Bestehende Unterantworten bleiben auch beim
+Umhängen oder Herauslösen einer Antwort am verschobenen Inhalt.
+
+Jede neue Umordnung benötigt eine Begründung mit höchstens 2000 Zeichen.
+Am verschobenen Beitrag bzw. der Antwort erscheint ein kleines gelbes
+Warndreieck. Per Klick öffnet sich der **Verschiebeverlauf** in einem Fenster
+mit Art der Umordnung, ausführendem Admin, Datum/Uhrzeit, Begründung und
+Anzahl mitgezogener Antworten. Autor und Datum der ursprünglichen Nachricht
+werden getrennt aufgeführt. Lesbare Zielbeiträge werden verlinkt. Der
+Originaltext wird nicht verändert. Das Symbol ist auch per Tastatur bedienbar.
+
+Weitere Umordnungen ergänzen den Verlauf, statt frühere Vermerke zu ersetzen.
+Der Verlauf bleibt beim Wechsel zwischen Beitrag und Antwort erhalten und ist
+für alle sichtbar, die den zugehörigen Inhalt lesen dürfen. Der lesende
+Verlaufs-Endpunkt erfordert keine Adminrolle und prüft stattdessen dieselben
+Leserechte wie der Inhalt. Unterantworten
+behalten ihre eigenen bisherigen Verläufe; der neue Vermerk steht am bewegten
+Hauptinhalt. Frühere Umordnungen ohne erfasste Begründung werden ausdrücklich
+so gekennzeichnet. Begründungen werden als Text ausgegeben, nicht als HTML.
 
 ## Grenzen der ersten Fassung
 
@@ -38,7 +64,9 @@ Die zeitliche Sortierung richtet sich weiterhin nach dem ursprünglichen Datum.
 - Ein ursprünglicher Beitrag bleibt intern zunächst als gelöschter Datensatz
   bis zur regulären HumHub-Bereinigung erhalten. Er erscheint nicht mehr im Stream.
 - Das Verschiebeprotokoll enthält den vorherigen Text und Metadaten. Es hat
-  keinen öffentlichen Lese-Endpunkt. Es ist kein bedienbarer Rückgängig-Verlauf.
+  keinen ungeschützten Lese-Endpunkt. Sichtbar sind nur die Vermerke am lesbaren
+  Inhalt, nicht die vollständigen internen Text-Snapshots. Es ist kein
+  bedienbarer Rückgängig-Verlauf.
 
 ## Technische Umsetzung
 
@@ -71,7 +99,9 @@ Kommentar-Caches und Suchindex werden nach erfolgreichem Verschieben aktualisier
 Nur den vorhandenen Modulordner `move-content` aktualisieren, nicht parallel
 zum Original installieren. Die Modul-ID bleibt gleich. Vorher DB und Dateien
 sichern. Die Migration `m261030_120000_thread_moves` über HumHubs normalen
-Modulmigrationsweg anwenden.
+Modulmigrationsweg anwenden. Für Beta 2 zusätzlich
+`m261030_180000_thread_move_notices` anwenden; bestehende Verschiebungen werden
+ihrem aktuellen Ziel zugeordnet, ohne eine Begründung zu erfinden.
 
 Der Integrationstest ist absichtlich auf die dedizierte Testcommunity beschränkt:
 

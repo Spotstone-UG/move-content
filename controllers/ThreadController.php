@@ -11,13 +11,32 @@ use yii\web\BadRequestHttpException;
 
 final class ThreadController extends Controller
 {
+    // History uses the content's read permissions; mutations still explicitly
+    // require an authenticated system or Space admin in ThreadMoveService.
+    protected $access = null;
+
+    public function actionHistory(string $type, int $id): string
+    {
+        $class = match ($type) {
+            'post' => Post::class,
+            'comment' => \humhub\modules\comment\models\Comment::class,
+            default => null,
+        };
+        $object = $class ? $class::findOne($id) : null;
+        if (!$object || !$object->content->canView()) { throw new \yii\web\NotFoundHttpException(); }
+        return $this->renderAjax('history', ['object' => $object]);
+    }
+
     public function actionIndex(string $type, int $id)
     {
         $service = new ThreadMoveService();
         $source = $service->load($type, $id);
-        $model = new DynamicModel(['operation' => $type === 'post' ? 'reply' : 'move', 'targetUrl' => '']);
+        $model = new DynamicModel(['operation' => $type === 'post' ? 'reply' : 'move', 'targetUrl' => '', 'reason' => '']);
         $model->addRule('operation', 'in', ['range' => $type === 'post' ? ['reply'] : ['move', 'promote']]);
         $model->addRule('targetUrl', 'string', ['max' => 2048]);
+        $model->addRule('reason', 'trim');
+        $model->addRule('reason', 'required');
+        $model->addRule('reason', 'string', ['max' => 2000]);
         $target = null;
         $preview = false;
         if ($model->load(Yii::$app->request->post()) && $model->validate()) {
@@ -28,7 +47,7 @@ final class ThreadController extends Controller
                 $service->validateMove($source, $target);
                 $preview = true;
                 if (Yii::$app->request->post('confirm') === '1') {
-                    $result = $service->move($type, $id, $target ? (int)$target->id : null, (string)Yii::$app->request->post('fingerprint'));
+                    $result = $service->move($type, $id, $target ? (int)$target->id : null, (string)Yii::$app->request->post('fingerprint'), $model->reason);
                     $this->view->success('Der Inhalt wurde umgeordnet. Autor, Datum, Anhänge und Reaktionen wurden beibehalten.');
                     return $this->redirect($result->getUrl());
                 }

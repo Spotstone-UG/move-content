@@ -20,6 +20,14 @@ use yii\base\InvalidConfigException;
 
 class Events
 {
+    public static function onEntryLinksAfterRun($event): void
+    {
+        $notice = \humhub\modules\moveContent\widgets\ThreadMoveNotice::widget(['object' => $event->sender->object]);
+        if ($notice === '') { return; }
+        $end = $event->sender instanceof \humhub\modules\content\widgets\WallEntryLinks ? strrpos($event->result, '</div>') : false;
+        $event->result = $end === false ? $event->result . ' ' . $notice : substr_replace($event->result, ' ' . $notice, $end, 0);
+    }
+
     public static function onThreadMenuRun($event): void
     {
         $menu = $event->sender;

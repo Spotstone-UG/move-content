@@ -18,6 +18,7 @@ use humhub\modules\post\models\Post;
             ? ['reply' => 'Diesen Beitrag als Antwort unter einen anderen Beitrag verschieben']
             : ['move' => 'Diese Antwort unter einen anderen Beitrag verschieben', 'promote' => 'Diese Antwort als eigenen Beitrag herauslösen'])->label('Was soll passieren?') ?>
         <?= $form->field($model, 'targetUrl')->textInput(['placeholder' => 'Permalink des Zielbeitrags'])->label('Link zum Zielbeitrag')->hint('Beim Herauslösen ist kein Ziel nötig. Quelle und Ziel müssen im selben Space liegen und dieselbe Sichtbarkeit haben.') ?>
+        <?= $form->field($model, 'reason')->textarea(['rows' => 3, 'maxlength' => 2000])->label('Begründung für die Umordnung')->hint('Wird zusammen mit deinem Namen und dem Zeitpunkt für alle angezeigt, die den verschobenen Inhalt lesen dürfen. Frühere Vermerke bleiben erhalten.') ?>
         <?php if ($preview): ?>
             <div class="alert alert-info">
                 <?php if ($target): ?>
@@ -27,6 +28,7 @@ use humhub\modules\post\models\Post;
                     <strong>Neue Stelle: eigener Beitrag im bisherigen Space</strong>
                 <?php endif; ?>
                 <p>Vorhandene direkte Antworten ziehen mit. Beim Umwandeln kann sich die zeitliche Reihenfolge entsprechend dem ursprünglichen Datum ändern.</p>
+                <p><strong>Sichtbarer Verschiebevermerk:</strong> <?= Html::encode($model->reason) ?></p>
             </div>
             <?= Html::hiddenInput('fingerprint', $fingerprint) ?>
             <?= Html::submitButton('Jetzt umordnen', ['class' => 'btn btn-primary', 'name' => 'confirm', 'value' => '1']) ?>

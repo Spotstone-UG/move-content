@@ -1,6 +1,6 @@
 # Spotstone development fork
 
-Version 2.5.0-beta.1 adds individual post/reply reorganization.
+Version 2.5.0-beta.2 adds individual post/reply reorganization and visible move history.
 See [usage, limitations and testing](THREAD-MOVES.md).
 Based on CUZY.APP Move content 2.4.1; original documentation follows.
 

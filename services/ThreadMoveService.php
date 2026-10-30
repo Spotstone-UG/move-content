@@ -6,7 +6,6 @@ namespace humhub\modules\moveContent\services;
 use humhub\libs\UUID;
 use humhub\modules\comment\models\Comment;
 use humhub\modules\content\models\Content;
-use humhub\modules\content\permissions\ManageContent;
 use humhub\modules\content\services\ContentSearchService;
 use humhub\modules\post\models\Post;
 use humhub\modules\space\models\Space;
@@ -35,8 +34,8 @@ final class ThreadMoveService
         $user = Yii::$app->user->identity;
         $space = $record->content->container;
         if (!$user || !$space instanceof Space || !$record->content->canView($user)
-            || (!$user->canManageAllContent() && !$space->getPermissionManager($user)->can(ManageContent::class))) {
-            throw new ForbiddenHttpException('Zum Umordnen sind Moderationsrechte im Space erforderlich.');
+            || (!$user->isSystemAdmin() && !$space->isAdmin($user->id))) {
+            throw new ForbiddenHttpException('Zum Umordnen sind Systemadmin-Rechte oder Admin-Rechte im jeweiligen Space erforderlich.');
         }
         if (!$record->content->getStateService()->isPublished() || $record->content->archived || $record->content->hidden) {
             throw new BadRequestHttpException('Nur veröffentlichte, nicht archivierte Beiträge können umgeordnet werden.');
@@ -87,8 +86,12 @@ final class ThreadMoveService
             $target?->getAttributes(), $target?->content->getAttributes()], JSON_THROW_ON_ERROR));
     }
 
-    public function move(string $type, int $id, ?int $targetId, string $expected): Post|Comment
+    public function move(string $type, int $id, ?int $targetId, string $expected, string $reason = ''): Post|Comment
     {
+        $reason = trim($reason);
+        if ($reason === '' || mb_strlen($reason) > 2000) {
+            throw new BadRequestHttpException('Bitte eine Begründung mit höchstens 2000 Zeichen eingeben.');
+        }
         $db = Yii::$app->db;
         $transaction = $db->getTransaction()
             ? $db->beginTransaction()
@@ -115,8 +118,10 @@ final class ThreadMoveService
                 throw new BadRequestHttpException('Quelle oder Ziel wurde inzwischen geändert. Bitte die Vorschau neu öffnen.');
             }
             $oldContent = $source->content;
-            $snapshot = json_encode(['record' => $source->getAttributes(), 'content' => $oldContent->getAttributes()], JSON_THROW_ON_ERROR);
+            $snapshot = json_encode(['record' => $source->getAttributes(), 'content' => $oldContent->getAttributes(),
+                'destination' => $target ? ['model' => $target::class, 'id' => (int)$target->id] : null], JSON_THROW_ON_ERROR);
             $oldParent = $source instanceof Comment ? [$source->object_model, $source->object_id] : null;
+            $replyCount = count($this->descendantIds($source::class, (int)$source->id));
             if ($source instanceof Post) {
                 $attributes = $source->getAttributes(['message', 'created_at', 'created_by', 'updated_at', 'updated_by']);
                 $attributes += ['object_model' => Post::class, 'object_id' => $target->id];
@@ -153,11 +158,16 @@ final class ThreadMoveService
                 $db->createCommand()->delete(Comment::tableName(), ['id' => $source->id])->execute();
                 $result = Post::findOne($newId);
             }
+            // Earlier notices follow the item when its Post/Comment identity changes.
+            $db->createCommand()->update(self::AUDIT_TABLE, ['item_model' => $result::class, 'item_id' => $result->id],
+                ['item_model' => $source::class, 'item_id' => $source->id])->execute();
             $db->createCommand()->insert(self::AUDIT_TABLE, [
                 'source_model' => $source::class, 'source_id' => $source->id,
                 'target_model' => $result::class, 'target_id' => $result->id,
                 'source_content_id' => $oldContent->id, 'snapshot' => $snapshot,
                 'created_by' => Yii::$app->user->id, 'created_at' => date('Y-m-d H:i:s'),
+                'reason' => $reason, 'item_model' => $result::class, 'item_id' => $result->id,
+                'reply_count' => $replyCount,
             ])->execute();
             $transaction->commit();
         } catch (\Throwable $e) {
@@ -196,11 +206,22 @@ final class ThreadMoveService
 
     private function updateFileContentIds(string $model, int $id, int $contentId): void
     {
-        $children = Comment::find()->select('id')->where(['object_model' => $model, 'object_id' => $id])->column();
+        $children = $this->descendantIds($model, $id);
         $ids = $model === Comment::class ? array_merge([$id], $children) : $children;
-        if ($children) {
-            $ids = array_merge($ids, Comment::find()->select('id')->where(['object_model' => Comment::class, 'object_id' => $children])->column());
-        }
         Yii::$app->db->createCommand()->update('{{%file}}', ['content_id' => $contentId], ['object_model' => Comment::class, 'object_id' => $ids])->execute();
+    }
+
+    /** @return list<int> Complete subtree; also used to count accompanying replies. */
+    private function descendantIds(string $model, int $id): array
+    {
+        $ids = [];
+        $next = Comment::find()->select('id')->where(['object_model' => $model, 'object_id' => $id])->column();
+        while ($next) {
+            $next = array_values(array_diff(array_map('intval', $next), $ids));
+            if (!$next) { break; }
+            $ids = array_merge($ids, $next);
+            $next = Comment::find()->select('id')->where(['object_model' => Comment::class, 'object_id' => $next])->column();
+        }
+        return $ids;
     }
 }
