@@ -63,12 +63,14 @@ final class ThreadMoveService
         if ($source->content->locked_comments || $target->content->locked_comments) {
             throw new BadRequestHttpException('Bei gesperrten Antworten ist kein Umordnen möglich.');
         }
-        if ($source instanceof Comment && $source->object_model === Post::class && (int)$source->object_id === (int)$target->id) {
+        if ($source instanceof Comment && ($this->modernComments()
+            ? (int)$source->content_id === (int)$target->content->id && $source->parent_comment_id === null
+            : $source->object_model === Post::class && (int)$source->object_id === (int)$target->id)) {
             throw new BadRequestHttpException('Diese Antwort gehört bereits zu diesem Beitrag.');
         }
         if ($source instanceof Post) {
-            $children = Comment::find()->select('id')->where(['object_model' => Post::class, 'object_id' => $source->id])->column();
-            if ($children && Comment::find()->where(['object_model' => Comment::class, 'object_id' => $children])->exists()) {
+            $children = $this->directChildren(Post::class, (int)$source->id);
+            if ($children && Comment::find()->where($this->modernComments() ? ['parent_comment_id' => $children] : ['object_model' => Comment::class, 'object_id' => $children])->exists()) {
                 throw new BadRequestHttpException('Dieser Beitrag hat bereits verschachtelte Antworten. Bitte diese zuerst umordnen, damit keine zusätzliche, unsichtbare Antwortebene entsteht.');
             }
             if ((new Query())->from('{{%content_tag_relation}}')->where(['content_id' => $source->content->id])->exists()) {
@@ -120,9 +122,11 @@ final class ThreadMoveService
             $oldContent = $source->content;
             $snapshot = json_encode(['record' => $source->getAttributes(), 'content' => $oldContent->getAttributes(),
                 'destination' => $target ? ['model' => $target::class, 'id' => (int)$target->id] : null], JSON_THROW_ON_ERROR);
-            $oldParent = $source instanceof Comment ? [$source->object_model, $source->object_id] : null;
+            $oldParent = $source instanceof Comment && !$this->modernComments() ? [$source->object_model, $source->object_id] : null;
             $replyCount = count($this->descendantIds($source::class, (int)$source->id));
-            if ($source instanceof Post) {
+            if ($this->modernComments()) {
+                $result = $this->moveModern($source, $target);
+            } elseif ($source instanceof Post) {
                 $attributes = $source->getAttributes(['message', 'created_at', 'created_by', 'updated_at', 'updated_by']);
                 $attributes += ['object_model' => Post::class, 'object_id' => $target->id];
                 $db->createCommand()->insert(Comment::tableName(), $attributes)->execute();
@@ -174,16 +178,122 @@ final class ThreadMoveService
             if ($transaction->isActive) { $transaction->rollBack(); }
             throw $e;
         }
-        if ($oldParent) { Comment::flushCommentCache($oldParent[0], $oldParent[1]); }
-        Comment::flushCommentCache($source::class, $source->id);
-        Comment::flushCommentCache($result::class, $result->id);
-        if ($target) { Comment::flushCommentCache(Post::class, $target->id); }
+        if ($this->modernComments()) {
+            Yii::$app->runtimeCache->flush();
+        } else {
+            if ($oldParent) { Comment::flushCommentCache($oldParent[0], $oldParent[1]); }
+            Comment::flushCommentCache($source::class, $source->id);
+            Comment::flushCommentCache($result::class, $result->id);
+            if ($target) { Comment::flushCommentCache(Post::class, $target->id); }
+        }
         // Search work is queued only after a successful transaction.
         $oldContent->refresh();
         (new ContentSearchService($oldContent))->update();
         (new ContentSearchService($result->content))->update();
         ContentSearchService::flushCache();
         return $result;
+    }
+
+
+    private function modernComments(): bool
+    {
+        return isset(Comment::getTableSchema()->columns['parent_comment_id']);
+    }
+
+    private function directChildren(string $model, int $id): array
+    {
+        if (!$this->modernComments()) {
+            $condition = ['object_model' => $model, 'object_id' => $id];
+        } elseif ($model === Comment::class) {
+            $condition = ['parent_comment_id' => $id];
+        } else {
+            $post = Post::findOne($id);
+            $condition = ['content_id' => $post->content->id, 'parent_comment_id' => null];
+        }
+        return Comment::find()->select('id')->where($condition)->column();
+    }
+
+    /** HumHub 1.19: preserve subtree IDs and migrate native content/addon references atomically. */
+    private function moveModern(Post|Comment $source, ?Post $target): Post|Comment
+    {
+        $db = Yii::$app->db;
+        $oldContent = $source->content;
+        $children = $this->directChildren($source::class, (int)$source->id);
+        $descendants = $this->descendantIds($source::class, (int)$source->id);
+        $attributes = $source->getAttributes(['message', 'created_at', 'created_by', 'updated_at', 'updated_by']);
+        if ($source instanceof Post) {
+            $attributes += ['content_id' => $target->content->id, 'parent_comment_id' => null];
+            $db->createCommand()->insert(Comment::tableName(), $attributes)->execute();
+            $result = Comment::findOne((int)$db->getLastInsertID());
+            Comment::updateAll(['parent_comment_id' => $result->id], ['id' => $children]);
+        } elseif ($target) {
+            $result = $source;
+            $result->updateAttributes(['content_id' => $target->content->id, 'parent_comment_id' => null]);
+        } else {
+            if (isset(Post::getTableSchema()->columns['url'])) {
+                $attributes['url'] = preg_match('/http(.*?)(\s|$)/i', $source->message) ? '1' : null;
+            }
+            $db->createCommand()->insert(Post::tableName(), $attributes)->execute();
+            $newId = (int)$db->getLastInsertID();
+            $contentAttributes = array_replace($oldContent->getAttributes(null, ['id']), [
+                'guid' => UUID::v4(), 'object_model' => Post::class, 'object_id' => $newId,
+                'stream_channel' => Content::STREAM_CHANNEL_DEFAULT, 'stream_sort_date' => $source->created_at,
+                'state' => Content::STATE_PUBLISHED, 'was_published' => 1,
+                'created_at' => $source->created_at, 'created_by' => $source->created_by,
+                'updated_at' => $source->updated_at, 'updated_by' => $source->updated_by,
+                'pinned' => 0, 'archived' => 0, 'hidden' => 0, 'locked_comments' => 0, 'scheduled_at' => null,
+            ]);
+            $db->createCommand()->insert(Content::tableName(), $contentAttributes)->execute();
+            $result = Post::findOne($newId);
+            Comment::updateAll(['parent_comment_id' => null], ['id' => $children]);
+        }
+        $contentId = (int)$result->content->id;
+        Comment::updateAll(['content_id' => $contentId], ['id' => $descendants]);
+        $recordId = \humhub\models\RecordMap::getId($source);
+        $this->moveNativeReferences($source, $result, $recordId, $contentId, $descendants);
+        if ($source::class !== $result::class) {
+            $this->retargetRelations($source::class, (int)$source->id, $result::class, (int)$result->id, $contentId);
+            $db->createCommand()->update('{{%record_map}}', ['model' => $result::class, 'pk' => $result->id], ['id' => $recordId])->execute();
+            if ($source instanceof Post) {
+                $db->createCommand()->update(Content::tableName(), ['state' => Content::STATE_DELETED], ['id' => $oldContent->id])->execute();
+            } else {
+                $db->createCommand()->delete(Comment::tableName(), ['id' => $source->id])->execute();
+            }
+        } else {
+            $this->updateFileContentIds(Comment::class, (int)$source->id, $contentId);
+            $db->createCommand()->update('{{%file}}', ['content_id' => $contentId], ['object_model' => Comment::class, 'object_id' => $source->id])->execute();
+        }
+        return $result;
+    }
+
+    private function moveNativeReferences(Post|Comment $source, Post|Comment $result, int $recordId, int $contentId, array $descendants): void
+    {
+        $db = Yii::$app->db;
+        $descendantRecords = (new Query())->select('id')->from('{{%record_map}}')->where(['model' => Comment::class, 'pk' => $descendants])->column();
+        foreach (['{{%like}}', '{{%activity}}'] as $table) {
+            if ($source instanceof Post) {
+                $condition = ['content_id' => $source->content->id, 'content_addon_record_id' => null];
+            } else {
+                $condition = ['content_addon_record_id' => $recordId];
+            }
+            $db->createCommand()->update($table, [
+                'content_id' => $contentId,
+                'content_addon_record_id' => $result instanceof Comment ? $recordId : null,
+            ], $condition)->execute();
+            // Every descendant retains its own RecordMap identity and reactions.
+            $db->createCommand()->update($table, ['content_id' => $contentId], ['content_addon_record_id' => $descendantRecords])->execute();
+        }
+        if ($source::class !== $result::class) {
+            $db->createCommand()->update('{{%activity}}', ['class' => $result instanceof Comment
+                ? 'humhub\\modules\\comment\\activities\\NewCommentActivity'
+                : 'humhub\\modules\\content\\activities\\ContentCreatedActivity'], [
+                'content_id' => $contentId,
+                'content_addon_record_id' => $result instanceof Comment ? $recordId : null,
+                'class' => $source instanceof Post
+                    ? 'humhub\\modules\\content\\activities\\ContentCreatedActivity'
+                    : 'humhub\\modules\\comment\\activities\\NewCommentActivity',
+            ])->execute();
+        }
     }
 
     private function retargetRelations(string $oldModel, int $oldId, string $newModel, int $newId, int $contentId): void
@@ -215,12 +325,12 @@ final class ThreadMoveService
     private function descendantIds(string $model, int $id): array
     {
         $ids = [];
-        $next = Comment::find()->select('id')->where(['object_model' => $model, 'object_id' => $id])->column();
+        $next = $this->directChildren($model, $id);
         while ($next) {
             $next = array_values(array_diff(array_map('intval', $next), $ids));
             if (!$next) { break; }
             $ids = array_merge($ids, $next);
-            $next = Comment::find()->select('id')->where(['object_model' => Comment::class, 'object_id' => $next])->column();
+            $next = Comment::find()->select('id')->where($this->modernComments() ? ['parent_comment_id' => $next] : ['object_model' => Comment::class, 'object_id' => $next])->column();
         }
         return $ids;
     }
