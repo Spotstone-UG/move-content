@@ -9,12 +9,12 @@
         "space",
         "user"
     ],
-    "version": "2.4.1",
+    "version": "2.5.0-beta.1",
     "humhub": {
         "minVersion": "1.18",
         "maxVersion": "1.19"
     },
-    "homepage": "https://github.com/cuzy-app/move-content",
+    "homepage": "https://github.com/Spotstone-UG/move-content",
     "authors": [
         {
             "name": "Marc FARRE",

@@ -1,6 +1,14 @@
 Changelog
 =========
 
+2.5.0-beta.1 (October 30, 2026, Spotstone fork)
+--------------------------------------------
+- Add moderator workflow to turn a post into a reply, promote a reply to a post,
+  and move a reply to another post in the same Space and visibility.
+- Preserve authors, timestamps, attachments, likes, emoji reactions and replies.
+- Add preview, transaction rollback, stale-preview checks and permalink redirects.
+- Add a rollback-based integration test; see `THREAD-MOVES.md` for limitations.
+
 2.4.1 (October 27, 2026)
 -----------------------
 - Fix: When moving content from a user to another, the contents commented or liked by the source user were moved to the top of the streams sorted by update date

@@ -1,3 +1,9 @@
+# Spotstone development fork
+
+Version 2.5.0-beta.1 adds individual post/reply reorganization.
+See [usage, limitations and testing](THREAD-MOVES.md).
+Based on CUZY.APP Move content 2.4.1; original documentation follows.
+
 # Move content and users
 
 **Transfer Content, Comments and Likes from one User or Space to another.**

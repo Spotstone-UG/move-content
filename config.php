@@ -17,6 +17,21 @@ return [
     'namespace' => 'humhub\modules\moveContent',
     'events' => [
         [
+            'class' => \humhub\modules\content\widgets\WallEntryControls::class,
+            'event' => \humhub\modules\content\widgets\WallEntryControls::EVENT_RUN,
+            'callback' => [Events::class, 'onThreadMenuRun'],
+        ],
+        [
+            'class' => \humhub\modules\comment\widgets\CommentControls::class,
+            'event' => \humhub\modules\comment\widgets\CommentControls::EVENT_RUN,
+            'callback' => [Events::class, 'onThreadMenuRun'],
+        ],
+        [
+            'class' => \humhub\components\Controller::class,
+            'event' => \humhub\components\Controller::EVENT_BEFORE_ACTION,
+            'callback' => [Events::class, 'onBeforeAction'],
+        ],
+        [
             'class' => UserMenu::class,
             'event' => UserMenu::EVENT_INIT,
             'callback' => [Events::class, 'onAdminUserMenuInit'],
