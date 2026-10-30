@@ -9,6 +9,10 @@ Changelog
 - Add preview, transaction rollback, stale-preview checks and permalink redirects.
 - Add a rollback-based integration test; see `THREAD-MOVES.md` for limitations.
 
+2.4.2 (Unreleased)
+------------------
+- Fix: Reviewed French, German, Spanish, Portuguese, Brazilian Portuguese, Italian and Dutch translations (wrong meanings, HumHub terminology, consistent wording and form of address); Traditional Chinese is now actually in Traditional Chinese and Norwegian Nynorsk in Nynorsk (they were copies of Simplified Chinese and Bokmål)
+
 2.4.1 (October 27, 2026)
 -----------------------
 - Fix: When moving content from a user to another, the contents commented or liked by the source user were moved to the top of the streams sorted by update date
